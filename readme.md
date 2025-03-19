@@ -6,4 +6,4 @@
 4. align_sequence.py to align sequences to those fast files and fill in missing nts in pdbs
 5. generate_train.py to generate kaggle format train data
 
-I've uploaded the pickle file so you may start from step 4 to reproduce Stanford3D competition data
+I've uploaded the pickle file: https://www.kaggle.com/datasets/shujun717/stanford3d-dataprocessing-pickle, so you may start from step 4 to reproduce Stanford3D competition data
