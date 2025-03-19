@@ -5,3 +5,5 @@
 3. get_xyz_data.py to get xyz data in a pickle file
 4. align_sequence.py to align sequences to those fast files and fill in missing nts in pdbs
 5. generate_train.py to generate kaggle format train data
+
+I've uploaded the pickle file so you may start from step 4 to reproduce Stanford3D competition data
