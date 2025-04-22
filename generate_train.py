@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 
 # Load the pickle file
-with open('pdb_xyz_data.pkl', 'rb') as f:
+with open('deduped_pdb_xyz_data.pkl', 'rb') as f:
     data = pickle.load(f)
 
 
@@ -21,6 +21,7 @@ with open('pdb_xyz_data.pkl', 'rb') as f:
 #load aligned sequences
 with open('aligned_sequences.pkl', 'rb') as f:
     aligned_sequences = pickle.load(f)
+
 
 wrong_alignments = 0
 train_sequences = []

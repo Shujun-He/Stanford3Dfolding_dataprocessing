@@ -6,7 +6,7 @@ from Bio import pairwise2
 from tqdm import tqdm
 
 # Load the pickle file
-with open('deduped_pdb_xyz_data.pkl', 'rb') as f:
+with open('pdb_xyz_data.pkl', 'rb') as f:
     data = pickle.load(f)
 
 # Ensure the output directory exists
@@ -23,7 +23,7 @@ for sequence, file in tqdm(zip(data['sequence'], data['filtered_cif_files']), to
     pdb_id = file_name.split('_')[0]
     chain_id = file_name.split('_')[1].strip(".pdb")
 
-    fasta_file_path = f"../Stanford3D_dataprocessing_add_modified_nts2/rna_structures/{pdb_id}.fasta"
+    fasta_file_path = f"rna_structures/{pdb_id}.fasta"
     alignment_file_path = f"alignments/{pdb_id}_{chain_id}_best_alignment.txt"
 
     # Fetch PDB entry details
@@ -39,7 +39,6 @@ for sequence, file in tqdm(zip(data['sequence'], data['filtered_cif_files']), to
     best_score = -float("inf")
     best_fasta_sequence = None
     best_alignment = None
-    index_map = []
 
     # Check if the fasta file exists
     if not os.path.exists(fasta_file_path):
@@ -55,27 +54,26 @@ for sequence, file in tqdm(zip(data['sequence'], data['filtered_cif_files']), to
             fasta_sequence = str(record.seq)
 
             #if len(fasta_sequence) < 1000:
-            length_cutoff = 1024
-            is_rna = all(r in ["A", "C", "G", "U", "X"] for r in fasta_sequence)
-            if  is_rna and set(list(fasta_sequence))!=set(['X']) and len(fasta_sequence) < length_cutoff and len(sequence) < length_cutoff:
-                # Align with Smith-Waterman (local alignment)
-                alignments = pairwise2.align.localms(sequence, fasta_sequence, 
-                                                    match=1, mismatch=-float("inf"), 
-                                                    open=-1, extend=-0.5)
+            if set(list(fasta_sequence)) != set(['X']): #ignore entirely X sequences
+                if len(fasta_sequence) < 500 and len(sequence) < 500:
+                    # Align with Smith-Waterman (local alignment) time limit 1 minute
+                    time_limit = 60
+                    alignments = pairwise2.align.localms(sequence, fasta_sequence, 
+                                                        match=1, mismatch=-float("inf"), 
+                                                        open=-1, extend=-0.5)
 
-                # Get the best alignment
-                if alignments and alignments[0].score > best_score:
-                    best_score = alignments[0].score
-                    best_fasta_sequence = fasta_sequence
-                    best_alignment = alignments[0]
+                    # Get the best alignment
+                    if alignments and alignments[0].score > best_score:
+                        best_score = alignments[0].score
+                        best_fasta_sequence = fasta_sequence
+                        best_alignment = alignments[0]
 
         # Save the best alignment to a text file
-        
         if best_alignment:
             aligned_seq1, aligned_seq2, score, start, end = best_alignment
 
             # Compute index mapping
-            
+            index_map = []
             seq_idx = 0  # Index in `sequence`
             fasta_idx = 0  # Index in `best_fasta_sequence`
             

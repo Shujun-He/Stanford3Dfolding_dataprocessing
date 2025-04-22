@@ -6,7 +6,6 @@ import os
 from glob import glob
 from multiprocessing import Pool
 from tqdm import tqdm
-import numpy as np
 
 def split_cif_by_chains(input_cif, output_dir):
     """
@@ -67,14 +66,9 @@ def split_cif_by_chains(input_cif, output_dir):
                 if residue.resname in modified_to_unmodified:
                     residue.resname = modified_to_unmodified[residue.resname]
 
-                #print(residue.type)
 
-                # if residue.id[0] != " ":
-                #     print(residue.resname)
-                #exclude heteroatoms and non canonical residues
-                if residue.resname not in {"A", "U", "G", "C"} or residue.id[0] != " ":
+                if residue.resname not in {"A", "U", "G", "C"}:
                     to_delete.append(residue.id)
-            #exit()
             # print(chain.child_dict.keys())
             # exit()
             #print(to_delete)
@@ -85,16 +79,11 @@ def split_cif_by_chains(input_cif, output_dir):
                 #del chain.child_dict[res_id]
 
             #print(list(chain.child_dict.keys()))
-            
-            # continue if the chain has at least 10 residues left
-            if len(chain.child_dict) < 10:
-                continue
-
-            # Check if 0.5 or more of the residues are RNA
-            is_rna = np.array([residue.resname in ["A", "C", "G", "U"] for residue in chain.get_residues()]).mean() >= 0.5
-            # print([residue.resname for residue in chain.get_residues()])  
-            # print(chain)
-            # print(is_rna)
+            # Check if the chain contains only RNA residues
+            is_rna = all(residue.resname in ["A", "C", "G", "U"] for residue in chain.get_residues())
+            print([residue.resname for residue in chain.get_residues()])
+            print(chain)
+            print(is_rna)
             if is_rna:
                 chain_id = chain.id
 
@@ -138,8 +127,7 @@ def process_cif_file(input_cif):
 if __name__ == "__main__":
     input_dir = "rna_structures/"
     output_dir = "split_chains"
-    cif_files = glob(f"{input_dir}/*.cif")
-    #cif_files = glob(f"{input_dir}/4E8K*.cif")
+    cif_files = glob(f"{input_dir}/4E8K*.cif")
 
     # Use multiprocessing to process CIF files in parallel
     cpu_count = os.cpu_count()

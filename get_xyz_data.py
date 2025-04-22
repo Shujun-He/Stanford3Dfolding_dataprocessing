@@ -9,17 +9,18 @@ import pandas as pd
 from utils import *
 
 cif_files=glob("split_chains/*.cif")
-len(cif_files)
+# len(cif_files)
 
-stats=pd.read_csv("extracted_structures.csv")
-stats=stats.set_index('cif')
+# stats=pd.read_csv("extracted_structures.csv")
+# stats=stats.set_index('cif')
 
-structure_cutoff=0.2
+# structure_cutoff=0.1
 
-filtered_cif_files=[f for f in cif_files if f in stats.index and stats.loc[f,'structuredness']>0.2]
+# filtered_cif_files=[f for f in cif_files if f in stats.index and stats.loc[f,'structuredness']>structure_cutoff]
 
-print("after filtering by structuredness there are:", len(filtered_cif_files)) 
-#print(len(filtered_cif_files))
+filtered_cif_files=cif_files
+# print("after filtering by structuredness there are:", len(filtered_cif_files)) 
+# print(len(filtered_cif_files))
 
 #exit()
 
@@ -167,98 +168,18 @@ data_xyz = []
 data_sequence = []
 data_cif_files = []
 # Separate results into sequences and coordinates
-for sequence, grouped_xyz, f in results:
-    if sequence is not None and grouped_xyz is not None:
-        data_sequence.append(sequence)
-        data_xyz.append(grouped_xyz)
-        data_cif_files.append(f)
+for result in results:
+    if len(result) == 3:
+        sequence, grouped_xyz, f = result
+        if sequence is not None and grouped_xyz is not None:
+            data_sequence.append(sequence)
+            data_xyz.append(grouped_xyz)
+            data_cif_files.append(f)
 
 print(f"Processed {len(data_sequence)} sequences and their coordinates.")
 
-# Save results as a pickle file
-#data = {"sequence": data_sequence, "xyz": data_xyz}
+# Save results as a pickle dict
+with open("raw_pdb_xyz_data.pkl", "wb+") as f:
+    pickle.dump({"sequence": data_sequence, "xyz": data_xyz, "data_cif_files": data_cif_files}, f)
 
 
-#bespoke chain break filter based on phosphate2phosphate distance
-chain_break_filter=[]
-for xyz in tqdm(data_xyz):
-    P_xyz=[]
-    for nt_xyz in xyz:
-        P_xyz.append(nt_xyz['sugar_ring'][0])
-    P_xyz=np.array(P_xyz)
-    dists=np.linalg.norm(P_xyz[1:]-P_xyz[:-1], axis=1)
-
-    if dists.max()>10:
-        chain_break_filter.append(False)
-    else:   
-        chain_break_filter.append(True)   
-data_xyz=[data_xyz[i] for i in range(len(data_xyz)) if chain_break_filter[i]]
-data_sequence=[data_sequence[i] for i in range(len(data_sequence)) if chain_break_filter[i]]
-data_cif_files=[data_cif_files[i] for i in range(len(data_cif_files)) if chain_break_filter[i]]
-print("after filtering by chain breaks there are:", len(data_sequence))
-
-
-# Use all available CPU cores
-num_cores = cpu_count()
-
-print(f"Using {num_cores} cores for multiprocessing")
-pdb_ids = [f.split("/")[-1].split(".")[0].split("_")[0] for f in data_cif_files]
-publication_date = [get_pdb_publication_date(pdb_id) for pdb_id in tqdm(pdb_ids)]
-
-
-
-# Sort by publication date and drop duplicates
-sorted_indices = np.argsort(publication_date)
-sorted_data_sequence = [data_sequence[i] for i in sorted_indices]
-sorted_data_xyz = [data_xyz[i] for i in sorted_indices]
-sorted_data_cif_files = [data_cif_files[i] for i in sorted_indices]
-sorted_publication_date = [publication_date[i] for i in sorted_indices]
-
-# Use a dictionary to drop duplicates while preserving order
-unique_data = {}
-for seq, xyz, cif, pub_date in zip(sorted_data_sequence, sorted_data_xyz, sorted_data_cif_files, sorted_publication_date):
-    if seq not in unique_data:
-        unique_data[seq] = (xyz, cif, pub_date)
-
-filtered_data_sequence = list(unique_data.keys())
-filtered_data_xyz = [unique_data[seq][0] for seq in filtered_data_sequence]
-filtered_data_cif_files = [unique_data[seq][1] for seq in filtered_data_sequence]
-filtered_publication_date = [unique_data[seq][2] for seq in filtered_data_sequence]
-
-print(f"Filtered to {len(filtered_data_sequence)} unique sequences.")
-
-
-
-
-
-data = {"sequence": filtered_data_sequence, 
-    "xyz": filtered_data_xyz,
-    'publication_date': filtered_publication_date,
-    'filtered_cif_files': filtered_data_cif_files}
-
-
-
-
-df = pd.DataFrame(data)
-
-# Path to CD-HIT executable
-cdhit_executable = "./../cdhit/cd-hit"  # Adjust the path to your CD-HIT executable
-output_prefix = "cdhit_results"
-
-clustered_df = run_cdhit_clustering(df, "sequence", output_prefix, cdhit_executable)
-
-# Drop the "xyz" column
-clustered_df_without_xyz = clustered_df.drop(columns=["xyz"], errors='ignore')
-
-# Save to CSV
-clustered_df_without_xyz.to_csv("pdb_xyz_data.csv", index=False)
-
-# Save to Parquet
-clustered_df_without_xyz.to_parquet("pdb_xyz_data.parquet")
-
-
-data['cluster']=clustered_df['cluster']
-
-
-with open("pdb_xyz_data.pkl", "wb+") as f:
-    pickle.dump(data, f)

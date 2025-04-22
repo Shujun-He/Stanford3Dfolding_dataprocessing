@@ -19,19 +19,14 @@ def search_rna_structures():
     query = {
         "query": {
             "type": "terminal",
-            "service": "text",
+            "service": "full_text",
             "parameters": {
-                "attribute": "struct_keywords.text",
-                "operator": "contains_words",
                 "value": "RNA"
             }
         },
         "return_type": "entry",
         "request_options": {
-            "paginate": {
-                "start": 0,
-                "rows": 10000
-            },
+            "return_all_hits": True,
             "results_content_type": ["experimental"],
             "sort": [{"sort_by": "score", "direction": "desc"}]
         }
@@ -91,7 +86,7 @@ def main():
     print("Searching for RNA structures...")
     rna_pdb_ids = search_rna_structures()
     print(f"Found {len(rna_pdb_ids)} RNA structures.")
-
+    # exit()
     print("Fetching structure data using multiprocessing...")
     with Pool(cpu_count()) as pool:
         structure_data = pool.map(fetch_structure_data, rna_pdb_ids)
