@@ -2,7 +2,7 @@ import pickle
 import numpy as np
 from tqdm import tqdm
 import multiprocessing as mp
-
+from rna_reference import rna_atom_groups
 
 # Save results as a pickle dict
 with open("raw_pdb_xyz_data.pkl", "rb") as f:
@@ -13,6 +13,10 @@ import pandas as pd
 df=pd.DataFrame(data['data_cif_files'])
 df.to_csv("raw_pdb_cif_files.csv", index=False)
 
+C1_index = rna_atom_groups["A"]["all"].index(
+    "C1'"
+)  # Index of C1' atom in the atom list
+
 
 def filter_condition(i):
     xyz=data['xyz'][i]
@@ -20,8 +24,8 @@ def filter_condition(i):
     for i in range(len(xyz)):
         if 'phosphate' in xyz[i]:
             xyz[i]['all']=xyz[i]['phosphate']
-            
-    xyz=[nt['all'][5] for nt in xyz]
+
+    xyz = [nt["all"][C1_index] for nt in xyz]
     xyz=np.stack(xyz)
     #exit()
     #first filter if percent nan > 0.5

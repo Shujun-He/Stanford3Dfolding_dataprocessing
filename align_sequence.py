@@ -23,7 +23,7 @@ for sequence, file in tqdm(zip(data['sequence'], data['filtered_cif_files']), to
     pdb_id = file_name.split('_')[0]
     chain_id = file_name.split('_')[1].strip(".pdb")
 
-    fasta_file_path = f"../Stanford3D_dataprocessing_add_modified_nts2/rna_structures/{pdb_id}.fasta"
+    fasta_file_path = f"./rna_structures/{pdb_id}.fasta"
     alignment_file_path = f"alignments/{pdb_id}_{chain_id}_best_alignment.txt"
 
     # Fetch PDB entry details

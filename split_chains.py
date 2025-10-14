@@ -1,12 +1,13 @@
+import copy
 from Bio.PDB import MMCIFParser, MMCIFIO, PDBIO
+from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.SeqIO import write
 import os
 from glob import glob
-from multiprocessing import Pool
-from tqdm import tqdm
 import numpy as np
+from rna_reference import modified_to_unmodified
 
 def split_cif_by_chains(input_cif, output_dir):
     """
@@ -20,60 +21,93 @@ def split_cif_by_chains(input_cif, output_dir):
     Returns:
         list: Paths to the generated CIF and FASTA files.
     """
-    # Ensure the output directory exists
-    os.makedirs(output_dir, exist_ok=True)
 
-    # Map of modified nucleotides to their unmodified counterparts
-    #modified_to_unmodified =  
-    # Manually curated mapping of noncanonical residue names to RNA.
-    modified_to_unmodified = {   'A'  :'  A',   'C':'  C',   'G':'  G',   'U':'  U',\
-                    '5BU':'  U', 'OMC':'  C', '5MC':'  C', 'CCC':'  C', ' DC':'  C', \
-                    'CBR':'  C', 'CBV':'  C', 'CB2':'  C', '2MG':'  G', \
-                    'H2U':'  U', 'PSU':'  U', '  U':'  U', '5MU':'  U', '2MU':'  U', 'OMU':'  U', \
-                    'OMG':'  G', '7MG':'  G', '1MG':'  G', 'GTP':'  G', 'AMP':'  A', 'MIA':'  A', ' YG':'  G', \
-                    'M2G':'  G', 'YYG':'  G', ' DG':'  G', 'G46':'  G', ' IC':'  C', ' IG':'  G',  \
-                    'ZMP':'ZMP', 'YYG':'  G', '2MG':'  G', 'H2U':'  U', 'AG9':'  C', ' IU':'  U', '3TD':'  U', \
-                    'A2M':'  A', '1MA':'  A', 'MA6':'  A', 'QUO':'  G', '6MZ':'  A', \
-                    'C4J':'  C', '4OC':'  C', 'G7M':'  G', 'T6A':'  A', 'AET':'  A', 'I4U':'  U', 'UR3':'  U', \
-                    'P7G':'  G', 'B9B':'  G', 'B8H':'  U', 'E6G':'  G', 'B8W':'  G', 'B8N':'  U', '4SU':'  U', \
-                    'LV2':'  C', '4AC':'  C', 'UY4':'  A', 'I2T':'  C', '7SN':'  G', 'SUR':'  U', '7S3':'  G', \
-                    'LHH':'  C', 'FHU':'  U', 'B9H':'  C', 'M1Y':'  U', 'B8Q':'  C',\
-                    'M7A':'  A', 'B8K':'  G', '2PR':'  G', 'LCG':'  G', 'UFT':'  U', 'CFZ':'  C', \
-                    'DA' :'  A',  'DC':'  C',  'DG':'  G',  'DT':'  U', '3AU':'  U', '9QV':'  U',' DU':'  U',
-                    'CFL':'  C', 'T2T':'  T', 'N'  :'  A', 'I'  :'  G', 'GRB':'  G', 'E3C':'  C', \
-                    'MMX':'  C', '1W5':'  C', '8AZ':'  G', 'B8T':'  C', 'UY1':'  U', '75B':'  U', \
-                    '4DU':'  A', '5HM':'  C', '6FC':'  C', 'E7G':'  G', 'MHG':'  G', 'DU' :'  U', \
-                    '56B':'  G', 'P5P':'  A', 'UMS':'  U', 'PYO':'  U', 'JMC':'  C', 'ZJS':'  A', \
-                    '6IA':'  A', 'CM0':'  U', '2MA':'  A', 'RSP':'  U', 'UD5':'  U', 'MUM':'  U', \
-                    'IU' :'  U', '12A':'  A', '70U':'  U', 'U8U':'  U',  'YG':'  G', 'BRU':'  U', \
-                    'ATP':'  A', 'CTP':'  C', 'UTP':'  U', '5IU':'  I', 'GDP':'  G', '5IC':'  C', \
-                }
 
     for key in modified_to_unmodified:
         modified_to_unmodified[key] = modified_to_unmodified[key].strip()
     
     # Initialize the parser and parse the CIF file
-    parser = MMCIFParser(QUIET=True)
+    parser = MMCIFParser(QUIET=True, auth_residues=False)
+    cif_dict = MMCIF2Dict(input_cif)
+
+    chain_to_sequence = {}
+    # Get sequence from entity_poly
+    entity_ids = cif_dict.get("_entity_poly.entity_id", [])
+    # Using canonical one-letter code that maps modified residues to parent according to wwPDB components.cif
+    seqs = cif_dict.get("_entity_poly.pdbx_seq_one_letter_code_can", [])
+
+    strand_ids = cif_dict.get("_entity_poly.pdbx_strand_id", [])
+    types = cif_dict.get("_entity_poly.type", [])
+
+    for entity_id, seq, strand_ids, type in zip(entity_ids, seqs, strand_ids, types):
+        print(f"Entity {entity_id} type {type} strand_ids {strand_ids} seq {seq}")
+        if type != "polyribonucleotide":
+            continue
+        strand_ids = strand_ids.strip().split(",")
+        seq = seq.replace("\n", "").replace(" ", "").strip()
+        for strand_id in strand_ids:
+            if strand_id in chain_to_sequence:
+                print(
+                    f"Warning: multiple sequences for chain {strand_id} in {input_cif}"
+                )
+            chain_to_sequence[strand_id] = seq
     structure = parser.get_structure("structure", input_cif)
 
     output_files = []
-    ID = input_cif.split('/')[-1].split('.')[0]
+    ID = input_cif.name.split(".")[0]  # to take care of .cif.gz too
 
     for model in structure:
         for chain in model:
-            # Replace modified nucleotides with their unmodified counterparts
+            if chain.id not in chain_to_sequence:
+                # Skip non-RNA chains
+                print("Available chains:", list(chain_to_sequence.keys()))
+                print(f"Skipping non-RNA chain {chain.id} in {input_cif}")
+                continue
+            else:
+                current_sequence = chain_to_sequence[chain.id]
+                output_sequence = list(copy.copy(current_sequence))
+
+            # Process residues in the chain, and assign modified residues to unmodified
+            # The due to auth_residues=False in MMCIFParser, the residues should have numbering
+            # consistent with the sequence in _entity_poly
+            # If not raises error. If the residues is modified with unknown parent (X) then
+            # use custom modified_to_unmodified to map to unmodified
+
             to_delete=[]
             for residue in chain.get_residues():
-                if residue.resname in modified_to_unmodified:
-                    residue.resname = modified_to_unmodified[residue.resname]
+                # Get the single code based on the resid
+                single_code = current_sequence[residue.id[1] - 1]
+                if single_code == "X":
+                    # Modified residue with unknown parent, try to map
+                    try:
+                        resname = modified_to_unmodified[residue.resname]
+                        # Change the output sequence as well
+                        output_sequence[residue.id[1] - 1] = (
+                            resname  # This should be single letter code for RNA anyway
+                        )
+                    except KeyError:
+                        # FIXME: That will leave fragments, make sure we want that
+                        to_delete.append(residue.id)
+                        continue
+                else:
+                    # Keep mapping from PDB
+                    resname = single_code
+                    # This should match, but just in case
+                    if resname != modified_to_unmodified.get(residue.resname, resname):
+                        print(
+                            f"Warning: residue name {residue.resname} does not match sequence {resname} in {input_cif}"
+                        )
+                        # continue
+                # TODO: verify atom mappings
+                residue.resname = resname
 
-                #print(residue.type)
+                # print(residue.type)
 
                 # if residue.id[0] != " ":
                 #     print(residue.resname)
-                #exclude heteroatoms and non canonical residues
-                if residue.resname not in {"A", "U", "G", "C"} or residue.id[0] != " ":
-                    to_delete.append(residue.id)
+                # exclude heteroatoms and non canonical residues
+                # if residue.resname not in {"A", "U", "G", "C"} or residue.id[0] != " ":
+                #     to_delete.append(residue.id)
             #exit()
             # print(chain.child_dict.keys())
             # exit()
@@ -85,12 +119,17 @@ def split_cif_by_chains(input_cif, output_dir):
                 #del chain.child_dict[res_id]
 
             #print(list(chain.child_dict.keys()))
-            
+            # FIXME: configurable minimum length 
             # continue if the chain has at least 10 residues left
             if len(chain.child_dict) < 10:
                 continue
 
-            # Check if 0.5 or more of the residues are RNA
+            # Check if 0.5 or more of the residues an the chain are RNA
+            # FIXME: configurable threshold
+            # TODO:idealy that should depend on the interactions, ie. it is fine to keep 
+            #      RNA from protein complex if the RNA is interacting in limited fashion with the protein
+            #      alternatively assign score for further filtering
+            # FIXME: verify, these should be only A,U,G,C now after mapping and deleting others
             is_rna = np.array([residue.resname in ["A", "C", "G", "U"] for residue in chain.get_residues()]).mean() >= 0.5
             # print([residue.resname for residue in chain.get_residues()])  
             # print(chain)
@@ -121,32 +160,41 @@ def split_cif_by_chains(input_cif, output_dir):
                 except:
                     pass
 
-                # Extract the sequence and write to a FASTA file
-                sequence = "".join(residue.resname for residue in chain.get_residues())
+                # Use the modified sequence to a FASTA file
+                sequence = "".join(output_sequence)
                 fasta_output_path = os.path.join(output_dir, f"{ID}_{chain_id}.fasta")
                 seq_record = SeqRecord(Seq(sequence), id=f"{ID}_{chain_id}", description=f"Chain {chain_id}")
                 with open(fasta_output_path, "w") as fasta_file:
                     write(seq_record, fasta_file, "fasta")
                 output_files.append(fasta_output_path)
+                # TODO: verify that this sequence matches the one in downloaded FASTA file
 
     return output_files
 
-def process_cif_file(input_cif):
-    output_dir = "split_chains"
-    return split_cif_by_chains(input_cif, output_dir)
-
 if __name__ == "__main__":
-    input_dir = "rna_structures/"
-    output_dir = "split_chains"
-    cif_files = glob(f"{input_dir}/*.cif")
-    #cif_files = glob(f"{input_dir}/4E8K*.cif")
+    import argparse
+    from functools import partial
+    from pathlib import Path
+    from utils import parallel_process
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "input_dir", type=str, help="Path to the directory with mmCIF files to check"
+    )
+    parser.add_argument(
+        "output_dir",
+        type=str,
+        help="Path to the directory where filtered files will be saved (symlinked)",
+    )
+    args = parser.parse_args()
+    input_dir = Path(args.input_dir)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    cif_files = list(input_dir.glob("*.cif"))
     # Use multiprocessing to process CIF files in parallel
-    cpu_count = os.cpu_count()
-    print(f"Processing {len(cif_files)} CIF files using {cpu_count} processes...")
-    with Pool(cpu_count) as pool:
-        results = list(tqdm(pool.imap(process_cif_file, cif_files), total=len(cif_files), desc="Processing CIF files"))
-
-    # Flatten the list of results
-    output_files = [file for sublist in results for file in sublist]
-    #print("Generated files:", output_files)
+    parallel_process(
+        partial(split_cif_by_chains, output_dir=output_dir),
+        cif_files,
+        desc="Splitting CIF files by chains",
+    )

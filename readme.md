@@ -7,3 +7,6 @@
 5. generate_train.py to generate kaggle format train data
 
 I've uploaded the pickle file: https://www.kaggle.com/datasets/shujun717/stanford3d-dataprocessing-pickle, so you may start from step 4 to reproduce Stanford3D competition data
+
+
+To run the full workflow for a sample, run job.sh, that will pull last week RNA structure and process. 

@@ -6,39 +6,12 @@ from Bio import pairwise2
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
+from rna_reference import rna_atom_groups
 
 # Load the pickle file
-with open('../fixed_deduped_pdb_xyz_data.pkl', 'rb') as f:
+with open('deduped_pdb_xyz_data.pkl', 'rb') as f:
     data = pickle.load(f)
 
-
-rna_atom_groups = {
-    "A": {
-        "all": ["P", "OP1", "OP2", "O5'","O3'"]+\
-               ["C1'", "C2'", "C3'", "C4'", "O4'", "C5'"]+\
-               ["N9", "N1", "C2", "N3", "C4", "C5", "C6", "N7", "C8", "N6"]
-    },
-    "U": {
-        "all": ["P", "OP1", "OP2", "O5'","O3'"]+\
-               ["C1'", "C2'", "C3'", "C4'", "O4'", "C5'"]+\
-               ["N1", "C2", "O2", "N3", "C4", "O4", "C5", "C6"]
-    },
-    "G": {
-        "all": ["P", "OP1", "OP2", "O5'","O3'"]+\
-                     ["C1'", "C2'", "C3'", "C4'", "O4'", "C5'"]+\
-                     ["N9", "N1", "C2", "N2", "N3", "C4", "C5", "C6", "O6", "N7", "C8", ]
-    },
-    "C": {
-        "all": ["P", "OP1", "OP2", "O5'","O3'"]+\
-                     ["C1'", "C2'", "C3'", "C4'", "O4'", "C5'"]+\
-                     ["N1", "C2", "O2", "N3", "C4", "N4", "C5", "C6"]
-    },
-    "N": {
-        "all": ["P", "OP1", "OP2", "O5'","O3'"]+\
-                     ["C1'", "C2'", "C3'", "C4'", "O4'", "C5'"]+\
-                     ["N1", "C2", "O2", "N3", "C4", "N4", "C5", "C6"]
-    }
-}
 
 #load aligned sequences
 with open('aligned_sequences.pkl', 'rb') as f:

@@ -1,4 +1,10 @@
 import requests
+import multiprocessing as mp
+from tqdm import tqdm
+import pandas as pd
+import subprocess
+import os
+
 
 # Function to fetch the publication date for a PDB ID
 def get_pdb_publication_date(pdb_id):
@@ -8,15 +14,16 @@ def get_pdb_publication_date(pdb_id):
         response.raise_for_status()
         data = response.json()
         # Extract the deposition date
-        return data.get('rcsb_accession_info', {}).get('initial_release_date', 'Unknown')[:10]
+        return data.get("rcsb_accession_info", {}).get(
+            "initial_release_date", "Unknown"
+        )[:10]
     except Exception as e:
         return f"Error: {e}"
 
-import pandas as pd
-import subprocess
-import os
 
-def run_cdhit_clustering(df, sequence_column, output_prefix, cdhit_executable, identity_threshold=0.8):
+def run_cdhit_clustering(
+    df, sequence_column, output_prefix, cdhit_executable, identity_threshold=0.8
+):
     """
     Perform CD-HIT clustering on sequences in a pandas DataFrame.
 
@@ -40,6 +47,7 @@ def run_cdhit_clustering(df, sequence_column, output_prefix, cdhit_executable, i
             fasta_file.write(f">seq{idx}\n{sequence}\n")
 
     # Run CD-HIT
+    # fmt: off
     cdhit_command = [
         cdhit_executable,
         "-i", input_fasta,
@@ -49,6 +57,7 @@ def run_cdhit_clustering(df, sequence_column, output_prefix, cdhit_executable, i
         "-M", "2000",  # Set memory limit to 2000 MB (greater than 1573 MB)
         "-l", "5"
     ]
+    # fmt: on
 
     subprocess.run(cdhit_command, check=True)
 
@@ -60,13 +69,15 @@ def run_cdhit_clustering(df, sequence_column, output_prefix, cdhit_executable, i
         for line in clstr:
             if line.startswith(">Cluster"):
                 current_cluster = int(line.split()[1])
-            #elif "*" in line:  # Representative sequence
+            # elif "*" in line:  # Representative sequence
             elif ">" in line:  # Sequence line
                 seq_id = line.split(">")[1].split("...")[0]
                 clusters[seq_id] = current_cluster
 
     # Map cluster information back to the DataFrame
-    sequence_to_cluster = {f"seq{idx + 1}": clusters.get(f"seq{idx + 1}", None) for idx in range(len(df))}
+    sequence_to_cluster = {
+        f"seq{idx + 1}": clusters.get(f"seq{idx + 1}", None) for idx in range(len(df))
+    }
     df["cluster"] = df.index.map(lambda idx: sequence_to_cluster.get(f"seq{idx + 1}"))
 
     # Clean up intermediate files
@@ -75,3 +86,17 @@ def run_cdhit_clustering(df, sequence_column, output_prefix, cdhit_executable, i
     # os.remove(cluster_file)
 
     return df
+
+
+def parallel_process(
+    function: callable,
+    data_list: list,
+    num_processes: int = mp.cpu_count(),
+    desc: str = "",
+):
+    """Utility function to parallelize processing using multiprocessing. With progress bar."""
+    l = len(data_list)
+    print(f"Processing {l} items using {num_processes} processes...")
+    with mp.Pool(processes=min(num_processes, l)) as pool:
+        results = list(tqdm(pool.imap(function, data_list), total=l, desc=desc))
+    return results
