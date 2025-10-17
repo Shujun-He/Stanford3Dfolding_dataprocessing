@@ -1,3 +1,4 @@
+from pathlib import Path
 import requests
 import multiprocessing as mp
 from tqdm import tqdm
@@ -100,3 +101,10 @@ def parallel_process(
     with mp.Pool(processes=min(num_processes, l)) as pool:
         results = list(tqdm(pool.imap(function, data_list), total=l, desc=desc))
     return results
+
+def relative_symlink(src: Path, dst: Path):
+    """Create a relative symlink from src to dst."""
+    relative_source = src.resolve().relative_to(dst.parent.resolve(), walk_up=True)
+    if dst.exists():
+        dst.unlink()
+    dst.symlink_to(relative_source)

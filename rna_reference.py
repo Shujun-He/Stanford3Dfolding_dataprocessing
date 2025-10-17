@@ -1,3 +1,7 @@
+from collections import UserDict
+import json
+from pathlib import Path
+
 # Manually curated mapping of noncanonical residue names to RNA.
 # TODO: Consider assigning based on ability to pair
 # TODO: review based on parent nucleotide mapping from NKDB; https://nakb.org/modifiednt.html
@@ -31,6 +35,30 @@ modified_to_unmodified = {   'A'  :'  A',   'C':'  C',   'G':'  G',   'U':'  U',
 ## Atom names for RNA residues
 phosphate = ["P", "OP1", "OP2", "OP3"]  # OP3 will be missing in polymers
 sugar = ["C1'", "C2'", "C3'", "C4'", "O4'", "C5'", "O5'", "O2'", "O3'"]
+
+# Get reference from the NAKB modified nucleotide database
+DATA_DIR = Path(__file__).parent / "data"
+
+
+def _load_nakb_mapping():
+    """Load the NAKB modified nucleotide data and create a mapping of modified residue names to standard bases."""
+    reference_file = DATA_DIR / "nakb_modified_nt_20251014.json"
+    with open(reference_file) as f:
+        nakb_data = json.load(f)
+        mapping = {}
+        for key, val in nakb_data.items():
+            if "standard_base" in val:
+                try:
+                    standard_base = val["standard_base"][0]
+                except IndexError:
+                    continue
+                # RNA only
+                if standard_base in ("A", "C", "G", "U"):
+                    mapping[key] = standard_base
+    return mapping
+
+
+modified_to_unmodified_nakb = _load_nakb_mapping()
 
 # fmt: off
 rna_atom_groups = {

@@ -4,7 +4,7 @@ import json
 import os
 from functools import partial
 from retryhttp import retry
-from utils import parallel_process
+from utils import parallel_process, relative_symlink
 
 # Base URLs for RCSB PDB APIs
 SEARCH_API = "https://search.rcsb.org/rcsbsearch/v2/query"
@@ -135,7 +135,7 @@ def get_metadata_fields(metadata_file, metadata_fields):
 
 
 # Fetch metadata and save PDB/CIF/FASTA files
-def fetch_structure_data(pdb_id, output_dir):
+def fetch_structure_data(pdb_id, output_dir, cache_dir=None):
     print(f"Processing PDB ID: {pdb_id}")
     structure_info = {
         "PDB_ID": pdb_id,
@@ -147,7 +147,9 @@ def fetch_structure_data(pdb_id, output_dir):
 
     # Fetch metadata and store it in json, do not parse
     metadata_path = os.path.join(output_dir, f"{pdb_id}.metadata.json")
-    if download_and_save(SUMMARY_API.format(pdb_id=pdb_id), metadata_path):
+    if download_and_save(
+        SUMMARY_API.format(pdb_id=pdb_id), metadata_path, cache_dir=cache_dir
+    ):
         structure_info["Metadata_File"] = metadata_path
     # Extract specified metadata fields
     metadata = get_metadata_fields(metadata_path, extra_metadata_fields)
@@ -155,45 +157,74 @@ def fetch_structure_data(pdb_id, output_dir):
 
     # Download PDB file
     pdb_file_path = os.path.join(output_dir, f"{pdb_id}.pdb")
-    if download_and_save(DOWNLOAD_PDB.format(pdb_id=pdb_id), pdb_file_path):
+    if download_and_save(
+        DOWNLOAD_PDB.format(pdb_id=pdb_id), pdb_file_path, cache_dir=cache_dir
+    ):
         structure_info["PDB_File"] = pdb_file_path
 
     # Download CIF file
     cif_file_path = os.path.join(output_dir, f"{pdb_id}.cif")
-    if download_and_save(DOWNLOAD_CIF.format(pdb_id=pdb_id), cif_file_path):
+    if download_and_save(
+        DOWNLOAD_CIF.format(pdb_id=pdb_id), cif_file_path, cache_dir=cache_dir
+    ):
         structure_info["CIF_File"] = cif_file_path
 
     # Download FASTA file
     fasta_file_path = os.path.join(output_dir, f"{pdb_id}.fasta")
-    if download_and_save(DOWNLOAD_FASTA.format(pdb_id=pdb_id), fasta_file_path):
+    if download_and_save(
+        DOWNLOAD_FASTA.format(pdb_id=pdb_id), fasta_file_path, cache_dir=cache_dir
+    ):
         structure_info["FASTA_File"] = fasta_file_path
 
     return structure_info
 
-def is_retryable_http_error(result):
-    if isinstance(result, requests.Response):
-        return result.status_code == 429  # Retry only on 429
-    return False
+@retry
+def download_url(url, destination):
+    """Retry if the download fails due to 429 Too Many Requests or other transient errors."""
+    response = requests.get(url)
+    response.raise_for_status()
+    with open(destination, "wb") as file:
+        file.write(response.content)
+
 
 # Helper function to download and save files,
-@retry
-def download_and_save(url, file_path, force=False):
+def download_and_save(url, file_path, cache_dir=None, force=False):
     """Download a file from a URL and save it locally. Skip if file exists unless force is True.
 
-    Retry if the download fails due to 429 Too Many Requests or other transient errors."""
-    if Path(file_path).exists() and not force:
+    """
+    cache_dir = Path(cache_dir) if cache_dir else None
+    file_path = Path(file_path)
+
+    if file_path.exists() and not force:
         print(f"File '{file_path}' already exists. Skipping download.")
         return True
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        with open(file_path, "wb") as file:
-            file.write(response.content)
-        return True
-    except requests.exceptions.RequestException as err:
-        print(f"Failed to download '{url}': {err}")
-        return False
 
+    destination = file_path
+    download = True
+    if cache_dir is not None:
+        # Save to cache first
+        cache_path = cache_dir / file_path.name
+        if cache_path.exists() and not force:
+            print(f"File '{cache_path}' already exists in cache. Skipping download.")
+            download = False
+        else:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            destination = cache_path
+            download = True
+
+    if download:
+        print(f"Downloading '{url}' to '{destination}'...")
+        try:
+            download_url(url, destination)
+        except requests.HTTPError as e:
+            print(f"Failed to download '{url}': {e}")
+            return False
+
+    if cache_dir:
+        # Symlink from cache to destination
+        print(f"Symlink '{cache_path}' to '{file_path}' from cache.")
+        relative_symlink(cache_path, file_path)
+    return True
 
 # Main execution
 def main():
@@ -228,6 +259,13 @@ def main():
         default="rna_structures_all",
         help="Directory to save downloaded files",
     )
+
+    parser.add_argument(
+        "--cache_dir",
+        type=str,
+        help="Directory to cache downloaded files",
+    )
+
     args = parser.parse_args()
 
     print(
@@ -246,9 +284,11 @@ def main():
 
     print("Fetching structure data using multiprocessing...")
     structure_data = parallel_process(
-        partial(fetch_structure_data, output_dir=args.output_dir),
+        partial(
+            fetch_structure_data, output_dir=args.output_dir, cache_dir=args.cache_dir
+        ),
         rna_pdb_ids,
-        num_processes=4,  # Throttle to limit number of requests
+        num_processes=12,  # Throttle to limit number of requests
         desc="Fetching structure data",
     )
 

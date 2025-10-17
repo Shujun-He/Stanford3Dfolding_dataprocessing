@@ -7,7 +7,65 @@ from Bio.SeqIO import write
 import os
 from glob import glob
 import numpy as np
-from rna_reference import modified_to_unmodified
+import re
+from rna_reference import modified_to_unmodified_nakb
+
+
+def get_sequence_from_cif(cif_dict):
+    chain_to_sequence = {}
+    # Get sequence from entity_poly
+    entity_ids = cif_dict.get("_entity_poly.entity_id", [])
+    # Using canonical one-letter code that maps modified residues to parent according to wwPDB components.cif
+    seqs = cif_dict.get("_entity_poly.pdbx_seq_one_letter_code_can", [])
+    seqs_full = cif_dict.get("_entity_poly.pdbx_seq_one_letter_code", [])
+
+    strand_ids = cif_dict.get("_entity_poly.pdbx_strand_id", [])
+    types = cif_dict.get("_entity_poly.type", [])
+
+    for entity_id, seq, seq_full, strand_ids, type in zip(
+        entity_ids, seqs, seqs_full, strand_ids, types
+    ):
+        print(f"Entity {entity_id} type {type} strand_ids {strand_ids} seq {seq}")
+        if type != "polyribonucleotide":
+            continue
+        strand_ids = strand_ids.strip().split(",")
+        seq = seq.replace("\n", "").replace(" ", "").strip()
+
+        # Check if all residues in the sequence are valid RNA residues, if other than AUCG then use seqs_full to get the ligand id and map using nakb_modified_nt
+        if not set(seq) == {"A", "U", "G", "C"}:
+            print(f"Entity {entity_id} has unresolved modified residues.")
+            # The seq_full has modified residue names in parantheses, e.g. A(5MC)UCG
+            # Extract the residue names and map them using modified_to_unmodified_nakb
+
+            residues = re.findall(r"([A-Z]|\(.*?\))", seq_full)
+            residues = [
+                res[1:-1] if res.startswith("(") and res.endswith(")") else res
+                for res in residues
+            ]
+            # Map the residues to unmodified using nakb mapping
+            # If not found in the mapping use 'A'
+            seq_mapped = []
+            for res in residues:
+                if res in {"A", "U", "G", "C"}:
+                    seq_mapped.append(res)
+                elif res in modified_to_unmodified_nakb:
+                    print(
+                        f"Mapping modified residue {res} to {modified_to_unmodified_nakb[res]} using NAKB data"
+                    )
+                    seq_mapped.append(modified_to_unmodified_nakb[res])
+                else:
+                    print(f"Warning: residue {res} not in NAKB mapping")
+                    seq_mapped.append(res)
+            seq = "".join(seq_mapped)
+
+        for strand_id in strand_ids:
+            if strand_id in chain_to_sequence:
+                print(
+                    f"Warning: multiple sequences for chain {strand_id} in {input_cif}"
+                )
+            chain_to_sequence[strand_id] = seq
+    return chain_to_sequence
+
 
 def split_cif_by_chains(input_cif, output_dir):
     """
@@ -22,35 +80,11 @@ def split_cif_by_chains(input_cif, output_dir):
         list: Paths to the generated CIF and FASTA files.
     """
 
-
-    for key in modified_to_unmodified:
-        modified_to_unmodified[key] = modified_to_unmodified[key].strip()
-    
     # Initialize the parser and parse the CIF file
+    print("Processing", input_cif)
     parser = MMCIFParser(QUIET=True, auth_residues=False)
     cif_dict = MMCIF2Dict(input_cif)
-
-    chain_to_sequence = {}
-    # Get sequence from entity_poly
-    entity_ids = cif_dict.get("_entity_poly.entity_id", [])
-    # Using canonical one-letter code that maps modified residues to parent according to wwPDB components.cif
-    seqs = cif_dict.get("_entity_poly.pdbx_seq_one_letter_code_can", [])
-
-    strand_ids = cif_dict.get("_entity_poly.pdbx_strand_id", [])
-    types = cif_dict.get("_entity_poly.type", [])
-
-    for entity_id, seq, strand_ids, type in zip(entity_ids, seqs, strand_ids, types):
-        print(f"Entity {entity_id} type {type} strand_ids {strand_ids} seq {seq}")
-        if type != "polyribonucleotide":
-            continue
-        strand_ids = strand_ids.strip().split(",")
-        seq = seq.replace("\n", "").replace(" ", "").strip()
-        for strand_id in strand_ids:
-            if strand_id in chain_to_sequence:
-                print(
-                    f"Warning: multiple sequences for chain {strand_id} in {input_cif}"
-                )
-            chain_to_sequence[strand_id] = seq
+    chain_to_sequence = get_sequence_from_cif(cif_dict)
     structure = parser.get_structure("structure", input_cif)
 
     output_files = []
@@ -77,29 +111,14 @@ def split_cif_by_chains(input_cif, output_dir):
             for residue in chain.get_residues():
                 # Get the single code based on the resid
                 single_code = current_sequence[residue.id[1] - 1]
-                if single_code == "X":
-                    # Modified residue with unknown parent, try to map
-                    try:
-                        resname = modified_to_unmodified[residue.resname]
-                        # Change the output sequence as well
-                        output_sequence[residue.id[1] - 1] = (
-                            resname  # This should be single letter code for RNA anyway
-                        )
-                    except KeyError:
-                        # FIXME: That will leave fragments, make sure we want that
-                        to_delete.append(residue.id)
-                        continue
-                else:
-                    # Keep mapping from PDB
-                    resname = single_code
-                    # This should match, but just in case
-                    if resname != modified_to_unmodified.get(residue.resname, resname):
-                        print(
-                            f"Warning: residue name {residue.resname} does not match sequence {resname} in {input_cif}"
-                        )
-                        # continue
+                # Should be A,U,G,C at this point
+                if single_code not in {"A", "U", "G", "C"}:
+                    print(
+                        f"Warning: residue {residue.resname} at position {residue.id[1]} in chain {chain.id} not mapped to standard base"
+                    )
                 # TODO: verify atom mappings
-                residue.resname = resname
+
+                residue.resname = single_code
 
                 # print(residue.type)
 
@@ -122,6 +141,7 @@ def split_cif_by_chains(input_cif, output_dir):
             # FIXME: configurable minimum length 
             # continue if the chain has at least 10 residues left
             if len(chain.child_dict) < 10:
+                print(f"Dropping {ID}_{chain_id}; Reason: rna_chain_too_short")
                 continue
 
             # Check if 0.5 or more of the residues an the chain are RNA
@@ -168,6 +188,8 @@ def split_cif_by_chains(input_cif, output_dir):
                     write(seq_record, fasta_file, "fasta")
                 output_files.append(fasta_output_path)
                 # TODO: verify that this sequence matches the one in downloaded FASTA file
+            else:
+                print(f"Dropping {ID}_{chain_id}; Reason: rna_chain_fraction_below_0.5")
 
     return output_files
 

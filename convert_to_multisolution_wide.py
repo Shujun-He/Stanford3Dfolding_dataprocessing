@@ -1,7 +1,7 @@
 import pandas as pd
 
 
-def to_wide(result_solution, fill_coordinates=None, select=None):
+def to_wide(result_solution, fill_coordinates=None, select=None, pad=None):
     """
     Convert long format solution dataframe to wide format and save to CSV, keeping only specified atoms.
 
@@ -35,6 +35,14 @@ def to_wide(result_solution, fill_coordinates=None, select=None):
     result_solution_selected = result_solution_selected.set_index(keep).unstack(
         "solution_id"
     )
+    # Extend the solution_id range and reindex if padding is requested
+    if pad is not None:
+        new_index = pd.MultiIndex.from_product(
+            [result_solution_selected.columns.levels[0], range(1, pad + 1)],
+            names=result_solution_selected.columns.names,
+        )
+        result_solution_selected = result_solution_selected.reindex(columns=new_index)
+
     result_solution_selected = result_solution_selected.sort_index(level=[1, 0], axis=1)
     # Fill missing coordinates if requested
     if fill_coordinates is not None:
@@ -67,10 +75,12 @@ def to_wide(result_solution, fill_coordinates=None, select=None):
         + (result_solution_selected["resid"]).astype(str)
     )
 
-    # Remove C1'_ prefix from column names
-    result_solution_selected.columns = [
-        col.replace("C1'_", "") for col in result_solution_selected.columns
-    ]
+    # Remove selected atom prefix (for example C1'_`) from column names if
+    # select is only one atom
+    if select is not None and len(select) == 1:
+        result_solution_selected.columns = [
+            col.replace(f"{select[0]}_", "") for col in result_solution_selected.columns
+        ]
 
     # Move ID to front
     cols = list(result_solution_selected.columns)
@@ -105,6 +115,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--pad",
+        type=int,
+        default=None,
+        help="Pad groups to this many solutions, filling with NaNs or fill-coordinates",
+    )
+
+    parser.add_argument(
         "--add-column",
         nargs=2,
         action="append",
@@ -120,7 +137,10 @@ if __name__ == "__main__":
     output_file = Path(args.output_file)
     result_solution = pd.read_csv(input_file)
     result_solution_selected = to_wide(
-        result_solution, fill_coordinates=args.fill_coordinates, select=args.select
+        result_solution,
+        fill_coordinates=args.fill_coordinates,
+        select=args.select,
+        pad=args.pad,
     )
 
     if args.add_column:

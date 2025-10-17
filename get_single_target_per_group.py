@@ -18,7 +18,7 @@ if __name__ == "__main__":
         "--sort_by",
         nargs="+",
         type=str,
-        default=["temporal_cutoff"],
+        default=["temporal_cutoff, pdb_chain_id"],
         help="Columns to sort by before merging",
     )
     parser.add_argument(
@@ -49,6 +49,13 @@ if __name__ == "__main__":
         help="Rename columns after processing, applied in order",
     )
 
+    parser.add_argument(
+        "--sort_by_after",
+        nargs="+",
+        type=str,
+        default=["temporal_cutoff", "target_id"],
+        help="Columns to sort by after merging",
+    )
     args = parser.parse_args()
     input_file = Path(args.input_file)
     output_file = Path(args.output_file)
@@ -78,6 +85,8 @@ if __name__ == "__main__":
             # drop exising columns to avoid conflicts
             targets = targets.drop(columns=[new_name], errors="ignore")
             targets = targets.rename(columns={old_name: new_name})
+    if args.sort_by_after:
+        targets = targets.sort_values(by=args.sort_by_after)
 
     targets.to_csv(
         output_file,

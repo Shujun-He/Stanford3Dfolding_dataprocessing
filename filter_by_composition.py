@@ -123,3 +123,5 @@ if __name__ == "__main__":
                 if in_path.exists() and in_path.is_file():
                     print(f"Keeping {in_path} -> {out_path}")
                     symlink_or_copy(in_path, out_path)
+        else:
+            print(f"Dropping {f}; Reason: rna_fraction_below_{args.threshold}")

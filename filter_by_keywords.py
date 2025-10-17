@@ -97,6 +97,11 @@ if __name__ == "__main__":
                 dst.unlink()
             dst.symlink_to(relative_source)
 
+    drop_message = (
+        "does_not_contain_keyword_" + args.keyword
+        if not args.is_not
+        else "contains_keyword_" + args.keyword
+    )
     for f, k in zip(file_list, keep):
         if k:
             for extension in [".cif"] + args.extra_extensions:
@@ -105,3 +110,5 @@ if __name__ == "__main__":
                 if in_path.exists() and in_path.is_file():
                     print(f"Keeping {in_path} -> {out_path}")
                     symlink_or_copy(in_path, out_path)
+        else:
+            print(f"Dropping {f}; Reason: {drop_message}")

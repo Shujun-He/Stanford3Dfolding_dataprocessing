@@ -51,6 +51,7 @@ def filter_condition(i):
     if (min_distances<12).mean()>0.2:
         return True
     else:
+        print(f"Dropping {data['data_cif_files'][i]}; Reason: inter_C1_distance_filter")
         return False
 
 

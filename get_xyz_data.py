@@ -72,15 +72,9 @@ def get_xyz_sequence(file, id_source="label"):
         if res in ["A", "U", "G", "C"]:
             for group in atom_groups:
                 for atom_key in atom_groups[group]:
-                    if atom_key != "O3'":
-                        atom_index = np.where(
-                            (seq_id == (i + 1)) & (atom_id == atom_key)
-                        )[0]
-                    else:
-                        atom_index = np.where((seq_id == (i)) & (atom_id == atom_key))[
-                            0
-                        ]  # take O3' from previous nucleotide
-                    # atom_index = np.where((seq_id == (i+1)) & (atom_id == atom_key))[0]
+                    atom_index = np.where((seq_id == (i + 1)) & (atom_id == atom_key))[
+                        0
+                    ]
                     if len(atom_index) > 0:
                         atom_coords[group].append(xyz[atom_index[0]])
                     else:
@@ -96,20 +90,7 @@ def get_xyz_sequence(file, id_source="label"):
         grouped_xyz.append(atom_coords)
 
     assert len(sequence_complete) == len(grouped_xyz)
-
-    # xyz_3bead = np.array(xyz_3bead, dtype='float32')
-    # data_3_bead.append(xyz_3bead)
-    # data_sequence.append(''.join(sequence_complete))
-    # data_xyz.append(grouped_xyz)
-
     return "".join(sequence_complete), grouped_xyz, file
-
-
-# data_xyz = []
-# data_sequence = []
-# for file in tqdm(filtered_cif_files):
-#     get_xyz_sequence(file)
-
 
 # Function to wrap `get_xyz_sequence` for multiprocessing
 def process_file(file, id_source="label"):
@@ -117,6 +98,7 @@ def process_file(file, id_source="label"):
         return get_xyz_sequence(file, id_source=id_source)
     except Exception as e:
         print(f"Error processing {file}: {e}")
+        print(f"Dropping {file}; Reason: xyz_processing_error")
         return None, None
 
 

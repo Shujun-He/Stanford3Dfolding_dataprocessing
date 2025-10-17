@@ -22,7 +22,7 @@ def filter(
     #####
     # Remove if we have more than one assembly per file, or if assemblies are not defined
     if not assemblies:
-        reason = "not_defined"
+        reason = "assembly_not_defined"
         return {"file": mmcif_file, "keep": False, "reason": reason}
 
     # Not doing it now
@@ -36,7 +36,7 @@ def filter(
     #####
     # Reject if the assembly is created by applying symmetry operators
     if any(op != "1" for op in oper_expressions):
-        reason = "symmetry_operators"
+        reason = "assembly_symmetry_operators"
         return {"file": mmcif_file, "keep": False, "reason": reason}
 
     #####
@@ -56,7 +56,7 @@ def filter(
             if type == "polyribonucleotide" and chain_id in strand_id.split(","):
                 rna_entity_set.add(entity_id)
     if len(rna_entity_set) > 1:
-        reason = "multiple_rna_entity_assembly"
+        reason = "assembly_multiple_rna_entities"
         return {"file": mmcif_file, "keep": False, "reason": reason}
 
     return {"file": mmcif_file, "keep": True, "reason": "ok"}
@@ -121,3 +121,5 @@ if __name__ == "__main__":
                 if in_path.exists() and in_path.is_file():
                     print(f"Keeping {in_path} -> {out_path}")
                     symlink_or_copy(in_path, out_path)
+        else:
+            print(f"Dropping {f}; Reason: {k['reason']}")
